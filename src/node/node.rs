@@ -4,11 +4,13 @@ use std::{
   time::{Duration, Instant},
 };
 
-use log::info;
+use log::{error, info};
 use rand::Rng;
 
+use crate::node::entry::RaftVoteResponse;
+
 use super::{
-  entry::{RaftEntry, RaftEntryResponse},
+  entry::{RaftEntry, RaftEntryResponse, RaftRequestVote},
   state::RaftState,
 };
 
@@ -19,29 +21,29 @@ use super::{
 #[derive(Debug)]
 pub struct RaftNode {
   id: u16,
-  position: RaftPosition,
   state: RaftState,
   current_leader: Option<u16>,
-  cluster_info: RaftClusterInfo,
+  cluster_info: HashMap<u16, SocketAddr>,
   time_for_election: Option<Instant>,
 }
 
 impl RaftNode {
   pub fn new(id: u16, server_info: HashMap<u16, SocketAddr>) -> Self {
-    Self {
+    let mut new_node = Self {
       id,
-      position: RaftPosition::Follower,
       state: RaftState::new(),
       current_leader: None,
-      cluster_info: RaftClusterInfo::new(server_info),
+      cluster_info: server_info,
       time_for_election: None,
-    }
+    };
+    new_node.wait_to_another_election();
+    new_node
   }
 
   /// Is in charge of broadcasting the heartbeats to all others the nodes, only if
   /// the node is the leader.
   pub fn broadcast_heartbeat(&mut self) {
-    if self.position == RaftPosition::Leader {
+    if self.state.is_leader() {
       let id = self.id;
       info!("Broadcasting heartbeats from {id}");
     }
@@ -49,16 +51,65 @@ impl RaftNode {
 
   /// Checks if it is time for a new election and start it. Otherwise it doesn't
   /// do anything.
-  pub fn handle_timeout(&mut self) {
+  pub async fn handle_timeout(&mut self) {
     if self.is_election_time() {
       let id = self.id;
-      info!("Starting an election from node {id}");
+      let term = self.state.term();
+      info!("Starting an election from node {id} in term {term}");
+      self.start_election().await;
     }
+  }
+
+  async fn start_election(&mut self) {
+    self.state.prepare_for_election();
+    let total_votes = self.cluster_info.len() as i32;
+    let positive_votes = 0;
+    for (id, address) in &self.cluster_info {
+      info!("Request vote for {id}");
+      match self.request_for_vote(&address).await {
+        Ok(vote_response) => {
+          info!("Vote requested");
+        },
+        Err(e) => {
+          error!("Cannot emmit the vote {e}");
+        },
+      }
+    }
+    let id = self.id;
+    match positive_votes > total_votes / 2 {
+      true => {
+        info!("Node {id} won the election");
+      },
+      false => {
+        info!("Node {id} lost the election");
+        self.wait_to_another_election();
+        self.state.election_lost();
+      },
+    }
+  }
+
+  async fn request_for_vote(
+    &self,
+    address: &SocketAddr,
+  ) -> Result<RaftVoteResponse, String> {
+    let vote = RaftRequestVote::new(self.state.term(), self.id_node());
+    let client = reqwest::Client::new();
+    let base_url = format!("http://{}", address);
+    let response = client
+      .post(base_url)
+      .json(&vote)
+      .send()
+      .await
+      .map_err(|e| e.to_string())?;
+    response
+      .json::<RaftVoteResponse>()
+      .await
+      .map_err(|e| e.to_string())
   }
 
   /// Sets the new instante for an election.
   /// The paper suggests a random timeout to avoid ties in the election process.
-  pub fn wait_to_another_election(&mut self) {
+  fn wait_to_another_election(&mut self) {
     let mut rng = rand::thread_rng();
     // let millis = Duration::from_millis(rng.gen_range(150..300));
     let millis = Duration::from_millis(rng.gen_range(4000..5000));
@@ -66,19 +117,19 @@ impl RaftNode {
   }
 
   /// Checks if it's time for a new election.
-  pub fn is_election_time(&self) -> bool {
+  fn is_election_time(&self) -> bool {
     match self.time_for_election {
-      Some(tfe) => Instant::now() > tfe,
+      Some(tfe) => Instant::now() > tfe && self.state.is_follower(),
       None => false,
     }
   }
 
-  pub fn id_node(&self) -> u16 {
+  fn id_node(&self) -> u16 {
     self.id
   }
 
-  pub fn position_node(&self) -> RaftPosition {
-    self.position.clone()
+  fn is_follower(&self) -> bool {
+    self.state.is_follower()
   }
 
   /// Handle the reception of an entry from another node.
@@ -92,82 +143,20 @@ impl RaftNode {
   }
 }
 
-/// Identifies the position that the node has it.
-#[derive(Clone, Eq, PartialEq, Debug)]
-pub enum RaftPosition {
-  Leader,
-  Follower,
-  Candidate,
-}
-
-/// Contains the addresses of the other nodes in the same cluster.
-/// Every node has its own address, could be the same ip, but in a different port.
-#[derive(Debug)]
-pub struct RaftClusterInfo {
-  server_address: HashMap<u16, SocketAddr>,
-}
-
-impl RaftClusterInfo {
-  pub fn new(server_address: HashMap<u16, SocketAddr>) -> Self {
-    Self { server_address }
-  }
-
-  pub fn get_address(&self, id: u16) -> Option<SocketAddr> {
-    self.server_address.get(&id).cloned()
-  }
+/// The result of an election
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum ElectionResult {
+  Win { node: u16 },
+  Lose,
+  Tie,
 }
 
 #[cfg(test)]
 mod tests {
+
   use super::*;
   use std::{str::FromStr, thread};
   static ELECTION_TIMEOUT: u64 = 6;
-
-  #[test]
-  fn create_new_cluster_info() {
-    let mut server_addres = HashMap::new();
-    server_addres.insert(
-      1u16,
-      SocketAddr::from_str("127.0.0.1:7001").unwrap(),
-    );
-    server_addres.insert(
-      2u16,
-      SocketAddr::from_str("127.0.0.1:7002").unwrap(),
-    );
-
-    let cluster_info = RaftClusterInfo::new(server_addres);
-    assert_eq!(
-      cluster_info.get_address(1u16).unwrap().to_string(),
-      "127.0.0.1:7001"
-    );
-    assert_eq!(
-      cluster_info.get_address(2u16).unwrap().to_string(),
-      "127.0.0.1:7002"
-    );
-  }
-
-  #[test]
-  fn create_new_cluster_info_with_duplicate_value() {
-    let mut server_addres = HashMap::new();
-    server_addres.insert(
-      1u16,
-      SocketAddr::from_str("127.0.0.1:7001").unwrap(),
-    );
-    server_addres.insert(
-      2u16,
-      SocketAddr::from_str("127.0.0.1:7001").unwrap(),
-    );
-
-    let cluster_info = RaftClusterInfo::new(server_addres);
-    assert_eq!(
-      cluster_info.get_address(1u16).unwrap().to_string(),
-      "127.0.0.1:7001"
-    );
-    assert_eq!(
-      cluster_info.get_address(2u16).unwrap().to_string(),
-      "127.0.0.1:7001"
-    );
-  }
 
   #[test]
   fn create_new_node() {
@@ -183,7 +172,7 @@ mod tests {
 
     let node = RaftNode::new(1u16, server_addres);
     assert_eq!(node.id_node(), 1u16);
-    assert_eq!(node.position_node(), RaftPosition::Follower);
+    assert_eq!(node.is_follower(), true);
     assert_eq!(node.is_election_time(), false);
   }
 
@@ -204,7 +193,7 @@ mod tests {
     thread::sleep(Duration::from_secs(ELECTION_TIMEOUT));
 
     assert_eq!(node.id_node(), 1u16);
-    assert_eq!(node.position_node(), RaftPosition::Follower);
+    assert_eq!(node.is_follower(), true);
     assert_eq!(node.is_election_time(), true);
   }
 

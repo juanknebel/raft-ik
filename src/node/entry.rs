@@ -19,7 +19,7 @@ impl RaftEntry {
     }
   }
 
-  pub fn is_hearbet(&self) -> bool {
+  fn is_hearbet(&self) -> bool {
     match self {
       Self::Heartbeat { .. } => true,
       Self::LogEntry { .. } => false,
@@ -43,7 +43,7 @@ impl RaftEntry {
     RaftEntry::Heartbeat { message }
   }
 
-  pub fn new_log_entry(
+  fn new_log_entry(
     term: u64,
     leader_id: u16,
     prev_log_index: u64,
@@ -105,4 +105,29 @@ impl RaftEntryResponse {
   pub fn entry_success(&self) -> bool {
     self.success
   }
+}
+
+#[derive(Clone, Serialize, Deserialize, Debug)]
+pub struct RaftRequestVote {
+  term: u64,
+  candidate_id: u16,
+  last_log_index: u64,
+  last_log_term: u64,
+}
+
+impl RaftRequestVote {
+  pub fn new(term: u64, candidate_id: u16) -> Self {
+    RaftRequestVote {
+      term,
+      candidate_id,
+      last_log_index: 0,
+      last_log_term: 0,
+    }
+  }
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct RaftVoteResponse {
+  term: u64,
+  vote_granted: bool,
 }

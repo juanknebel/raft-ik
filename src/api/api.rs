@@ -2,7 +2,7 @@ use crate::{
   error::{Error, Result},
   node::entry::RaftEntryResponse,
 };
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use axum::{
   extract::{rejection::JsonRejection, State},
@@ -11,6 +11,7 @@ use axum::{
 };
 
 use log::info;
+use tokio::sync::Mutex;
 
 use crate::node::{entry::RaftEntry, node::RaftNode};
 
@@ -29,7 +30,7 @@ pub async fn heartbeat(
   let Json(heartbeat) = heartbeat_param.map_err(|e| Error::ParseError {
     kind: e.body_text(),
   })?;
-  let mut node_unlock = node.lock().map_err(|e| Error::LockError)?;
-  let response = node_unlock.process(heartbeat);
+  let mut node_lock = node.lock().await;
+  let response = node_lock.process(heartbeat);
   Ok(Json(response))
 }

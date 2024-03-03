@@ -1,15 +1,12 @@
 use std::{
-  collections::HashMap,
-  net::SocketAddr,
-  str::FromStr,
-  sync::{Arc, Mutex},
-  thread,
+  collections::HashMap, net::SocketAddr, str::FromStr, sync::Arc, thread,
   time::Duration,
 };
 
 use axum::Router;
 use log::error;
 use log::info;
+use tokio::sync::Mutex;
 
 use crate::{api, node::node::RaftNode};
 
@@ -94,7 +91,7 @@ impl RaftServer {
     self.router.clone()
   }
 
-  pub fn start(&mut self) {
+  pub async fn start(&mut self) {
     info!("Starting the Raft Server");
     tokio::spawn(background_tasks(Arc::clone(&self.node)));
 
@@ -103,22 +100,23 @@ impl RaftServer {
     let waiting_as_secs = waiting_time.as_secs();
     info!("Wating {waiting_as_secs} seconds for other nodes ...");
     thread::sleep(waiting_time);
-
-    self.node.lock().unwrap().wait_to_another_election();
   }
 }
 
+/// This async function is in charge of executing the process of keeping the entire system
+/// in a valid state.
+/// *) Indicates the node to handle the timeout, to update the new leader, to keep informed
+/// who is the leader or to start a new election.
+/// *) Indicates the node to broadcast the heartbeat if necessary.
 async fn background_tasks(node: Arc<Mutex<RaftNode>>) {
   loop {
-    match node.lock() {
-      Ok(mut lock_node) => {
-        lock_node.handle_timeout();
-        lock_node.broadcast_heartbeat();
-      },
-      Err(e) => {
-        error!("Cannot lock the resource");
-        panic!("Not good {e}")
-      },
-    }
+    let mut node_lock = node.lock().await;
+    node_lock.handle_timeout().await;
+    node_lock.broadcast_heartbeat();
+    drop(node_lock);
+    // Err(e) => {
+    //   error!("Cannot lock the resource");
+    //   panic!("Not good {e}")
+    // },
   }
 }

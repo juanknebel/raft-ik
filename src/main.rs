@@ -22,7 +22,7 @@ async fn main() {
   let mut server = RaftServer::new(&config);
 
   // -- Start Raft Server -- //
-  server.start();
+  server.start().await;
 
   // -- Start the the web server -- //
   let addr = SocketAddr::from_str(&config.host()).unwrap();
