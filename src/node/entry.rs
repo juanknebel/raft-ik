@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub enum RaftEntry {
   Heartbeat {
     message: RaftMessage,
@@ -14,15 +14,34 @@ pub enum RaftEntry {
 impl RaftEntry {
   pub fn term(&self) -> u64 {
     match self {
-      Self::Heartbeat { message } => message.term,
-      Self::LogEntry { message, .. } => message.term,
+      Self::Heartbeat {
+        message,
+      } => message.term,
+      Self::LogEntry {
+        message, ..
+      } => message.term,
     }
   }
 
-  fn is_hearbet(&self) -> bool {
+  pub fn leader_id(&self) -> u16 {
     match self {
-      Self::Heartbeat { .. } => true,
-      Self::LogEntry { .. } => false,
+      Self::Heartbeat {
+        message,
+      } => message.leader_id,
+      Self::LogEntry {
+        message, ..
+      } => message.leader_id,
+    }
+  }
+
+  fn is_hearbaet(&self) -> bool {
+    match self {
+      Self::Heartbeat {
+        ..
+      } => true,
+      Self::LogEntry {
+        ..
+      } => false,
     }
   }
 
@@ -40,7 +59,9 @@ impl RaftEntry {
       prev_log_term,
       leader_commit,
     };
-    RaftEntry::Heartbeat { message }
+    RaftEntry::Heartbeat {
+      message,
+    }
   }
 
   fn new_log_entry(
@@ -58,7 +79,10 @@ impl RaftEntry {
       prev_log_term,
       leader_commit,
     };
-    RaftEntry::LogEntry { message, commands }
+    RaftEntry::LogEntry {
+      message,
+      commands,
+    }
   }
 }
 
@@ -68,8 +92,8 @@ impl core::fmt::Display for RaftEntry {
   }
 }
 
-#[derive(Debug, Deserialize)]
-struct RaftMessage {
+#[derive(Debug, Deserialize, Serialize)]
+pub struct RaftMessage {
   pub term: u64,
   pub leader_id: u16,
   pub prev_log_index: u64,
@@ -77,7 +101,7 @@ struct RaftMessage {
   pub leader_commit: u64,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct RaftEntryResponse {
   term: u64,
   success: bool,
@@ -124,10 +148,50 @@ impl RaftRequestVote {
       last_log_term: 0,
     }
   }
+
+  pub fn term(&self) -> u64 {
+    self.term
+  }
+
+  pub fn candidate(&self) -> u16 {
+    self.candidate_id
+  }
+
+  pub fn log_index(&self) -> u64 {
+    self.last_log_index
+  }
+
+  pub fn log_term(&self) -> u64 {
+    self.last_log_term
+  }
 }
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct RaftVoteResponse {
   term: u64,
   vote_granted: bool,
+}
+
+impl RaftVoteResponse {
+  pub fn failure(term: u64) -> Self {
+    Self {
+      term,
+      vote_granted: false,
+    }
+  }
+
+  pub fn success(term: u64) -> Self {
+    Self {
+      term,
+      vote_granted: true,
+    }
+  }
+
+  pub fn vote_was_granted(&self) -> bool {
+    self.vote_granted
+  }
+
+  pub fn vote_term(&self) -> u64 {
+    self.term
+  }
 }

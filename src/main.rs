@@ -13,7 +13,7 @@ use crate::raft::server::{RaftServer, RaftServerConfig};
 #[tokio::main]
 async fn main() {
   dotenv::dotenv().ok();
-  env_logger::init();
+  env_logger::builder().format_timestamp_millis().init();
 
   // -- Initialize the configuration -- //
   let config = RaftServerConfig::new();

@@ -1,0 +1,26 @@
+
+layout {
+    default_tab_template {
+        pane size=1 borderless=true {
+            plugin location="zellij:tab-bar"
+        }
+        children
+        pane size=2 borderless=true {
+            plugin location="zellij:status-bar"
+        }
+    }
+    tab name="Main" cwd="./" focus=true {
+        pane split_direction="vertical" {
+          pane name="Cluster 1" cwd="./tmp/cluster_1"
+          pane name="Cluster 2" cwd="./tmp/cluster_2"
+          pane name="Cluster 3" cwd="./tmp/cluster_3"
+        }
+    }
+    tab name="System Monitor" cwd="./" {
+        pane command="htop" name="htop" size="80%"
+        pane command="df" name="Disk usage" size="20%" {
+            args "-h"
+        }
+
+    }
+}

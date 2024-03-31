@@ -3,8 +3,9 @@ use log::error;
 use reqwest::StatusCode;
 use serde::Serialize;
 
-/// This kind of Result encapsulates a success Ok or a failure Err, but the failure
-/// has an error that is match with a htttp status and an internal error.
+/// This kind of Result encapsulates a success Ok or a failure Err, but the
+/// failure has an error that is match with a htttp status and an internal
+/// error.
 pub type Result<T> = core::result::Result<T, Error>;
 
 /// The application errors.
@@ -21,7 +22,9 @@ pub enum Error {
 impl Error {
   pub fn client_status_and_error(&self) -> (StatusCode, ClientError) {
     match self {
-      Self::ParseError { .. } => (
+      Self::ParseError {
+        ..
+      } => (
         StatusCode::BAD_REQUEST,
         ClientError::InvalidParams,
       ),
