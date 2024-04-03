@@ -34,7 +34,7 @@ impl RaftEntry {
     }
   }
 
-  fn is_hearbaet(&self) -> bool {
+  pub fn is_hearbaet(&self) -> bool {
     match self {
       Self::Heartbeat {
         ..

@@ -7,7 +7,9 @@ use std::{
 use log::{error, info};
 use rand::Rng;
 
-use crate::node::{entry::RaftVoteResponse, node_client::NodeClient};
+use crate::node::{
+  entry::RaftVoteResponse, node_client::NodeClient, state::RaftPosition,
+};
 
 use super::{
   entry::{RaftEntry, RaftEntryResponse, RaftRequestVote},
@@ -51,7 +53,7 @@ impl RaftNode {
   /// Is in charge of broadcasting the heartbeats to all others the nodes, only
   /// if the node is the leader.
   pub async fn broadcast_heartbeat(&mut self) {
-    if self.state.is_leader() {
+    if self.state.position() == RaftPosition::Leader {
       let heartbeat =
         RaftEntry::new_heartbeat(self.state.term(), self.id, 0, 0, 0);
       for (id, address) in &self.cluster_info {
@@ -114,7 +116,7 @@ impl RaftNode {
   /// Sets the new instant for an election.
   /// The paper suggests a random timeout to avoid ties in the election process.
   fn wait_to_another_election(&mut self) {
-    if !self.state.is_leader() {
+    if self.state.position() != RaftPosition::Leader {
       let mut rng = rand::thread_rng();
       let millis = Duration::from_millis(rng.gen_range(150..300));
       //    let millis = Duration::from_secs(rng.gen_range(5..10));
@@ -125,7 +127,9 @@ impl RaftNode {
   /// Checks if it's time for a new election.
   fn is_election_time(&self) -> bool {
     match self.time_for_election {
-      Some(tfe) => Instant::now() > tfe && self.state.is_follower(),
+      Some(tfe) => {
+        Instant::now() > tfe && self.state.position() == RaftPosition::Follower
+      },
       None => false,
     }
   }
@@ -144,10 +148,6 @@ impl RaftNode {
 
   pub fn vote_for(&self) -> Option<u16> {
     self.state.last_vote()
-  }
-
-  fn is_follower(&self) -> bool {
-    self.state.is_follower()
   }
 
   /// Handle the reception of a heartbeat entry from another node.
@@ -172,20 +172,46 @@ impl RaftNode {
     );
     answer
   }
+
+  /// Handles a new command into the cluster.
+  /// If the node is the leader, then the command will be processed and
+  /// replicated into the others nodes. (Not yet implemented).
+  /// If the node isn't the leader, then raise an error with the address of the
+  /// leader.
+  pub fn handle_command(
+    &mut self,
+    a_command: impl Into<String> + std::fmt::Display,
+  ) -> Result<(), Option<SocketAddr>> {
+    match self.state.position() {
+      RaftPosition::Leader => {
+        info!("Processing the command: {}", a_command);
+        Ok(())
+      },
+      _ => match self.current_leader {
+        None => Err(None),
+        Some(the_leader) => {
+          let address_of_leader = self.cluster_info.get(&the_leader);
+          Err(address_of_leader.cloned())
+        },
+      },
+    }
+  }
 }
 
 #[cfg(test)]
 mod tests {
 
   use super::*;
+  use crate::node::node_client::HttpNodeClient;
   use std::{str::FromStr, thread};
+
   static ELECTION_TIMEOUT: u64 = 6;
 
   #[test]
   fn create_new_node() {
     let node = new_default_raft_node();
     assert_eq!(node.id_node(), 1u16);
-    assert_eq!(node.is_follower(), true);
+    assert_eq!(node.state.position(), RaftPosition::Follower);
     assert_eq!(node.is_election_time(), false);
   }
 
@@ -212,7 +238,7 @@ mod tests {
     thread::sleep(Duration::from_secs(ELECTION_TIMEOUT));
 
     assert_eq!(node.id_node(), 1u16);
-    assert_eq!(node.is_follower(), true);
+    assert_eq!(node.state.position(), RaftPosition::Follower);
     assert_eq!(node.is_election_time(), true);
   }
 

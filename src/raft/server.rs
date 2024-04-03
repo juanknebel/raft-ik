@@ -79,7 +79,6 @@ impl RaftServerConfig {
 pub struct RaftServer {
   node: Arc<Mutex<RaftNode>>,
   router: Router,
-  config: RaftServerConfig,
 }
 
 impl RaftServer {
@@ -98,7 +97,6 @@ impl RaftServer {
     RaftServer {
       node: Arc::clone(&arc_node),
       router,
-      config: config.clone(),
     }
   }
 

@@ -15,7 +15,7 @@ pub type Result<T> = core::result::Result<T, Error>;
 #[serde(tag = "type", content = "data")]
 pub enum Error {
   ParseError { kind: String },
-  InteralError,
+  InternalError,
   LockError,
 }
 
@@ -28,16 +28,11 @@ impl Error {
         StatusCode::BAD_REQUEST,
         ClientError::InvalidParams,
       ),
-      Self::InteralError => (
+      Self::InternalError => (
         StatusCode::INTERNAL_SERVER_ERROR,
         ClientError::ServiceError,
       ),
       Self::LockError => (StatusCode::LOCKED, ClientError::LockError),
-      _ => (
-        // Fallback error
-        StatusCode::INTERNAL_SERVER_ERROR,
-        ClientError::ServiceError,
-      ),
     }
   }
 }

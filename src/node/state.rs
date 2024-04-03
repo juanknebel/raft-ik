@@ -30,18 +30,6 @@ impl RaftState {
     self.vote_for = Some(node_id)
   }
 
-  pub fn is_follower(&self) -> bool {
-    self.current_position == RaftPosition::Follower
-  }
-
-  pub fn is_leader(&self) -> bool {
-    self.current_position == RaftPosition::Leader
-  }
-
-  pub fn is_candidate(&self) -> bool {
-    self.current_position == RaftPosition::Candidate
-  }
-
   pub fn last_vote(&self) -> Option<u16> {
     self.vote_for
   }
@@ -57,13 +45,17 @@ impl RaftState {
   /// Process an entry send by another node.
   /// At this point I assume is only a heartbeat.
   pub fn process(&mut self, an_entry: &RaftEntry) -> RaftEntryResponse {
-    if an_entry.term() < self.term() {
-      return RaftEntryResponse::failure(self.term());
+    if an_entry.is_hearbaet() {
+      if an_entry.term() < self.term() {
+        return RaftEntryResponse::failure(self.term());
+      }
+      self.current_position = RaftPosition::Follower;
+      self.vote_for = None;
+      self.current_term = an_entry.term();
+      RaftEntryResponse::success(self.term())
+    } else {
+      RaftEntryResponse::failure(self.term())
     }
-    self.current_position = RaftPosition::Follower;
-    self.vote_for = None;
-    self.current_term = an_entry.term();
-    RaftEntryResponse::success(self.term())
   }
 
   /// Decides if this state could emmit a positive or negative vote.
@@ -123,6 +115,10 @@ impl RaftState {
       false
     };
   }
+
+  pub fn position(&self) -> RaftPosition {
+    self.current_position.clone()
+  }
 }
 
 /// Identifies the position that the node has it.
@@ -142,7 +138,7 @@ mod test {
     let state = RaftState::new();
 
     assert_eq!(state.last_vote(), None);
-    assert_eq!(state.is_follower(), true);
+    assert_eq!(state.position(), RaftPosition::Follower);
     assert_eq!(state.term(), 0);
     assert_eq!(state.logs().is_empty(), true);
   }
@@ -152,7 +148,7 @@ mod test {
     let mut state = RaftState::new();
     state.prepare_for_election(1u16);
 
-    assert_eq!(state.is_candidate(), true);
+    assert_eq!(state.position(), RaftPosition::Candidate);
     assert_eq!(state.term(), 1);
     assert_eq!(state.logs().is_empty(), true);
     assert_eq!(state.last_vote(), Some(1u16))

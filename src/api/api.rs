@@ -6,12 +6,14 @@ use std::sync::Arc;
 
 use axum::{
   extract::{rejection::JsonRejection, State},
+  http::StatusCode,
+  response::{IntoResponse, Response},
   routing::{get, post},
   Json, Router,
 };
 
 use log::info;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
 
 use crate::node::{entry::RaftEntry, node::RaftNode};
@@ -20,10 +22,12 @@ pub fn routes(node: Arc<Mutex<RaftNode>>) -> Router {
   info!("Adding POST /heartbeat");
   info!("Adding POST /vote");
   info!("Adding GET /info");
+  info!("Adding POST /command");
   Router::new()
     .route("/heartbeat", post(heartbeat))
     .route("/vote", post(vote))
     .route("/info", get(info))
+    .route("/command", post(add_command))
     .with_state(node)
 }
 
@@ -67,10 +71,57 @@ pub async fn info(
   Ok(Json(response))
 }
 
+pub async fn add_command(
+  State(node): State<Arc<Mutex<RaftNode>>>,
+  command_param: core::result::Result<Json<RaftCommand>, JsonRejection>,
+) -> Response {
+  let mut node_lock = node.lock().await;
+  if command_param.is_err() {
+    return (
+      StatusCode::BAD_REQUEST,
+      command_param.err().unwrap().body_text(),
+    )
+      .into_response();
+  }
+  let Json(a_command) = command_param.unwrap();
+  return match node_lock.handle_command(a_command.some_command) {
+    Ok(_) => {
+      let response = RaftCommandResponse {
+        leader: node_lock.leader().unwrap(),
+        term: node_lock.current_term(),
+      };
+      (StatusCode::ACCEPTED, Json(response)).into_response()
+    },
+    Err(e) => match e {
+      None => (
+        StatusCode::INTERNAL_SERVER_ERROR,
+        "Unexpected error",
+      )
+        .into_response(),
+      Some(address) => (
+        StatusCode::PERMANENT_REDIRECT,
+        address.to_string(),
+      )
+        .into_response(),
+    },
+  };
+}
+
 #[derive(Serialize)]
-struct RaftInfo {
+pub struct RaftInfo {
   id: u16,
   term: u64,
   leader: Option<u16>,
   vote_for: Option<u16>,
+}
+
+#[derive(Deserialize)]
+pub struct RaftCommand {
+  some_command: String,
+}
+
+#[derive(Serialize)]
+struct RaftCommandResponse {
+  leader: u16,
+  term: u64,
 }
