@@ -57,7 +57,7 @@ impl RaftServerConfig {
     }
   }
 
-  pub fn host(&self) -> String {
+  fn host(&self) -> String {
     self.host_address.to_string()
   }
 
@@ -76,13 +76,14 @@ impl RaftServerConfig {
 
 /// The Raft Server that contains the Node wrapped in a sync Mutex and the
 /// configuration needed to created it.
-pub struct RaftServer {
+pub struct RaftServerRest {
   node: Arc<Mutex<RaftNode>>,
   router: Router,
+  config: RaftServerConfig,
 }
 
-impl RaftServer {
-  pub fn new(config: &RaftServerConfig) -> RaftServer {
+impl RaftServerRest {
+  pub fn new(config: RaftServerConfig) -> RaftServerRest {
     // -- Node initialazing --//
     let node_client = HttpNodeClient::new(config.node_timeout());
     let node = RaftNode::new(
@@ -94,13 +95,14 @@ impl RaftServer {
 
     // -- Routes --//
     let router = Router::new().merge(api::api::routes(Arc::clone(&arc_node)));
-    RaftServer {
+    RaftServerRest {
       node: Arc::clone(&arc_node),
       router,
+      config,
     }
   }
 
-  pub fn routes(&self) -> Router {
+  fn routes(&self) -> Router {
     self.router.clone()
   }
 
@@ -109,6 +111,14 @@ impl RaftServer {
   pub async fn start(&mut self) {
     info!("Starting the Raft Server");
     tokio::spawn(background_tasks(Arc::clone(&self.node)));
+
+    // -- Start the the web server -- //
+    let addr = SocketAddr::from_str(&self.config.host()).unwrap();
+    info!("[Listening on {addr}]");
+    axum::Server::bind(&addr)
+      .serve(self.routes().into_make_service())
+      .await
+      .unwrap();
   }
 }
 
