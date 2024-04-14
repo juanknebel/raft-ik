@@ -8,16 +8,16 @@ use log::{error, info};
 use rand::Rng;
 
 use crate::node::{
-  entry::RaftVoteResponse, node_client::NodeClient, state::RaftPosition,
+  entry::VoteResult, node_client::NodeClient, state::RaftPosition,
 };
 
 use super::{
-  entry::{RaftEntry, RaftEntryResponse, RaftRequestVote},
+  entry::{Entry, EntryResult, Vote},
   state::RaftState,
 };
 
 /// The RaftNode contains all the necessary information to perform all the
-/// actions to mantain a consensus between the whole network of nodes in a
+/// actions to maintain a consensus between the whole network of nodes in a
 /// distributed system. The node at any given moment could be only one the
 /// following positions: Follower, Candidate, Leader. Every time the node came
 /// to life it starts as a Follower.
@@ -54,8 +54,7 @@ impl RaftNode {
   /// if the node is the leader.
   pub async fn broadcast_heartbeat(&mut self) {
     if self.state.position() == RaftPosition::Leader {
-      let heartbeat =
-        RaftEntry::new_heartbeat(self.state.term(), self.id, 0, 0, 0);
+      let heartbeat = Entry::new_heartbeat(self.state.term(), self.id, 0, 0, 0);
       for (id, address) in &self.cluster_info {
         //        match send_heartbeat(&address, &heartbeat).await {
         match self.client.send_heartbeat(&address, &heartbeat).await {
@@ -81,14 +80,16 @@ impl RaftNode {
     }
   }
 
+  /// Starts a round for an election.
+  /// Change the position to candidate and request votes to the others nodes.
+  /// If it wins the election, then became the new leader.
   async fn start_election(&mut self) {
     self.state.prepare_for_election(self.id_node());
     let total_votes = self.cluster_info.len() as i32;
     let mut positive_votes = 0;
-    let a_vote = RaftRequestVote::new(self.state.term(), self.id_node());
+    let a_vote = Vote::new(self.state.term(), self.id_node());
     for (id, address) in &self.cluster_info {
       info!("Sending a vote to node: {}", id);
-      //      match request_for_vote(&address, &a_vote).await {
       match self.client.request_for_vote(&address, &a_vote).await {
         Ok(vote_response) => {
           if vote_response.vote_was_granted() {
@@ -151,7 +152,7 @@ impl RaftNode {
   }
 
   /// Handle the reception of a heartbeat entry from another node.
-  pub fn ack_heartbeat(&mut self, entry: RaftEntry) -> RaftEntryResponse {
+  pub fn ack_heartbeat(&mut self, entry: Entry) -> EntryResult {
     let entry_response = self.state.process(&entry);
     if entry_response.entry_success() {
       self.current_leader = Some(entry.leader_id());
@@ -162,7 +163,7 @@ impl RaftNode {
   }
 
   /// Handle the reception of request for vote.
-  pub fn answer_vote(&mut self, a_vote: RaftRequestVote) -> RaftVoteResponse {
+  pub fn answer_vote(&mut self, a_vote: Vote) -> VoteResult {
     let answer = self.state.answer_vote(&a_vote);
     info!(
       "Node {}, votes {} in request from {}",
@@ -216,19 +217,19 @@ mod tests {
   }
 
   fn new_default_raft_node() -> RaftNode {
-    let mut server_addres = HashMap::new();
-    server_addres.insert(
+    let mut server_address = HashMap::new();
+    server_address.insert(
       1u16,
       SocketAddr::from_str("127.0.0.1:7001").unwrap(),
     );
-    server_addres.insert(
+    server_address.insert(
       2u16,
       SocketAddr::from_str("127.0.0.1:7002").unwrap(),
     );
 
     let node_client = HttpNodeClient::new(Duration::from_millis(10u64));
 
-    RaftNode::new(1u16, server_addres, node_client)
+    RaftNode::new(1u16, server_address, node_client)
   }
 
   #[test]
@@ -245,7 +246,7 @@ mod tests {
   #[test]
   fn heartbeat_with_time_elapsed() {
     let mut node = new_default_raft_node();
-    let entry = RaftEntry::new_heartbeat(2, 2, 0, 0, 0);
+    let entry = Entry::new_heartbeat(2, 2, 0, 0, 0);
     assert_eq!(node.is_election_time(), false);
     let response = node.ack_heartbeat(entry);
     thread::sleep(Duration::from_secs(ELECTION_TIMEOUT));
@@ -258,7 +259,7 @@ mod tests {
   #[test]
   fn heartbeat_with_term_greater_than() {
     let mut node = new_default_raft_node();
-    let entry = RaftEntry::new_heartbeat(2, 2, 0, 0, 0);
+    let entry = Entry::new_heartbeat(2, 2, 0, 0, 0);
     assert_eq!(node.is_election_time(), false);
     let response = node.ack_heartbeat(entry);
 
@@ -269,7 +270,7 @@ mod tests {
   #[test]
   fn heartbeat_with_term_equal() {
     let mut node = new_default_raft_node();
-    let entry = RaftEntry::new_heartbeat(0, 2, 0, 0, 0);
+    let entry = Entry::new_heartbeat(0, 2, 0, 0, 0);
     let response = node.ack_heartbeat(entry);
 
     assert_eq!(response.entry_term(), 0);
@@ -279,7 +280,7 @@ mod tests {
   #[test]
   fn heartbeat_with_term_less_than() {
     let mut node = new_default_raft_node();
-    let entry = RaftEntry::new_heartbeat(4, 2, 0, 0, 0);
+    let entry = Entry::new_heartbeat(4, 2, 0, 0, 0);
     let _response = node.ack_heartbeat(entry);
 
     // cannot be done yet

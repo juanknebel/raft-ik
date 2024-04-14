@@ -1,6 +1,4 @@
-use crate::node::entry::{
-  RaftEntry, RaftEntryResponse, RaftRequestVote, RaftVoteResponse,
-};
+use crate::node::entry::{Entry, EntryResult, Vote, VoteResult};
 use axum::async_trait;
 use reqwest::{IntoUrl, Url};
 use serde::{Deserialize, Serialize};
@@ -11,13 +9,13 @@ pub trait NodeClient: Send + Sync + 'static {
   async fn request_for_vote(
     &self,
     address: &SocketAddr,
-    a_vote: &RaftRequestVote,
-  ) -> Result<RaftVoteResponse, String>;
+    a_vote: &Vote,
+  ) -> Result<VoteResult, String>;
   async fn send_heartbeat(
     &self,
     address: &SocketAddr,
-    a_heartbeat: &RaftEntry,
-  ) -> Result<RaftEntryResponse, String>;
+    a_heartbeat: &Entry,
+  ) -> Result<EntryResult, String>;
 }
 
 impl std::fmt::Debug for dyn NodeClient {
@@ -66,8 +64,8 @@ impl NodeClient for HttpNodeClient {
   async fn request_for_vote(
     &self,
     address: &SocketAddr,
-    a_vote: &RaftRequestVote,
-  ) -> Result<RaftVoteResponse, String> {
+    a_vote: &Vote,
+  ) -> Result<VoteResult, String> {
     let url = format!(
       "http://{}:{}/{}",
       address.ip(),
@@ -81,8 +79,8 @@ impl NodeClient for HttpNodeClient {
   async fn send_heartbeat(
     &self,
     address: &SocketAddr,
-    a_heartbeat: &RaftEntry,
-  ) -> Result<RaftEntryResponse, String> {
+    a_heartbeat: &Entry,
+  ) -> Result<EntryResult, String> {
     let url = format!(
       "http://{}:{}/{}",
       address.ip(),

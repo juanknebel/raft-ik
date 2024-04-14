@@ -1,6 +1,6 @@
 use crate::{
   error::{Error, Result},
-  node::entry::{RaftEntryResponse, RaftRequestVote, RaftVoteResponse},
+  node::entry::{EntryResult, Vote, VoteResult},
 };
 use std::sync::Arc;
 
@@ -16,7 +16,7 @@ use log::info;
 use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
 
-use crate::node::{entry::RaftEntry, node::RaftNode};
+use crate::node::{entry::Entry, node::RaftNode};
 
 pub fn routes(node: Arc<Mutex<RaftNode>>) -> Router {
   info!("Adding POST /heartbeat");
@@ -33,8 +33,8 @@ pub fn routes(node: Arc<Mutex<RaftNode>>) -> Router {
 
 pub async fn heartbeat(
   State(node): State<Arc<Mutex<RaftNode>>>,
-  heartbeat_param: core::result::Result<Json<RaftEntry>, JsonRejection>,
-) -> Result<Json<RaftEntryResponse>> {
+  heartbeat_param: core::result::Result<Json<Entry>, JsonRejection>,
+) -> Result<Json<EntryResult>> {
   let Json(heartbeat) = heartbeat_param.map_err(|e| Error::ParseError {
     kind: e.body_text(),
   })?;
@@ -46,8 +46,8 @@ pub async fn heartbeat(
 
 pub async fn vote(
   State(node): State<Arc<Mutex<RaftNode>>>,
-  vote_param: core::result::Result<Json<RaftRequestVote>, JsonRejection>,
-) -> Result<Json<RaftVoteResponse>> {
+  vote_param: core::result::Result<Json<Vote>, JsonRejection>,
+) -> Result<Json<VoteResult>> {
   let Json(vote) = vote_param.map_err(|e| Error::ParseError {
     kind: e.body_text(),
   })?;
