@@ -1,20 +1,27 @@
-use crate::node::node::RaftNode;
-use std::{net::SocketAddr, sync::Arc};
+use std::sync::Arc;
+
 use tokio::sync::Mutex;
 use tonic::{Request, Response, Status};
-
-use crate::node::entry::{Entry, Vote};
 
 use raft::{
   health_server::Health, raft_core_server::RaftCore, CommandRequest,
   CommandResponse, EmptyRequest, EntryResponse, HeartbeatRequest, InfoResponse,
   VoteRequest, VoteResponse,
 };
+
+use crate::node::{
+  entry::{Entry, Vote},
+  node::RaftNode,
+};
+
 pub mod raft {
   tonic::include_proto!("raft");
+
+  pub(crate) const FILE_DESCRIPTOR_SET: &[u8] =
+    tonic::include_file_descriptor_set!("raft_descriptor");
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct RaftCoreService {
   node: Arc<Mutex<RaftNode>>,
 }
@@ -102,7 +109,7 @@ impl RaftCore for RaftCoreService {
   }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct HealthService {
   node: Arc<Mutex<RaftNode>>,
 }

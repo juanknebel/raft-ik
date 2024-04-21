@@ -6,10 +6,19 @@ use std::{
 use axum::Router;
 use log::info;
 use tokio::sync::Mutex;
+use tonic::transport::Server;
 
 use crate::{
   api,
-  node::{node::RaftNode, node_client::HttpNodeClient},
+  api::api_proto::{
+    raft,
+    raft::{health_server::HealthServer, raft_core_server::RaftCoreServer},
+    HealthService, RaftCoreService,
+  },
+  node::{
+    node::RaftNode,
+    node_client::{HttpNodeClient, RpcNodeClient},
+  },
 };
 
 /// This a simple Server configuration to create the Node with its parameters.
@@ -71,6 +80,52 @@ impl RaftServerConfig {
 
   fn node_timeout(&self) -> Duration {
     self.node_client_timeout.clone()
+  }
+}
+
+pub struct RaftServerRpc {
+  node: Arc<Mutex<RaftNode>>,
+  config: RaftServerConfig,
+}
+
+impl RaftServerRpc {
+  pub fn new(config: RaftServerConfig) -> RaftServerRpc {
+    // -- Node initialazing --//
+    let node_client = RpcNodeClient::new(config.node_timeout());
+    let node = RaftNode::new(
+      config.server_id(),
+      config.addresses(),
+      node_client,
+    );
+    let arc_node = Arc::new(Mutex::new(node));
+
+    RaftServerRpc {
+      node: Arc::clone(&arc_node),
+      config,
+    }
+  }
+
+  pub async fn start(&self) {
+    info!("Starting the Raft Server");
+    tokio::spawn(background_tasks(Arc::clone(&self.node)));
+
+    // -- Start the the web server -- //
+    let addr = SocketAddr::from_str(&self.config.host()).unwrap();
+    info!("[Listening on {addr}]");
+    let core_service = RaftCoreService::new(Arc::clone(&self.node));
+    let health_service = HealthService::new(Arc::clone(&self.node));
+    let reflection_service = tonic_reflection::server::Builder::configure()
+      .register_encoded_file_descriptor_set(raft::FILE_DESCRIPTOR_SET)
+      .build()
+      .unwrap();
+
+    Server::builder()
+      .add_service(reflection_service)
+      .add_service(RaftCoreServer::new(core_service))
+      .add_service(HealthServer::new(health_service))
+      .serve(addr)
+      .await
+      .unwrap();
   }
 }
 

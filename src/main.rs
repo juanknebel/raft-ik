@@ -1,7 +1,7 @@
 use dotenv;
 use env_logger;
 
-use crate::raft::server::{RaftServerConfig, RaftServerRest};
+use crate::raft::server::{RaftServerConfig, RaftServerRpc};
 
 mod api;
 mod error;
@@ -17,7 +17,9 @@ async fn main() {
   let config = RaftServerConfig::new();
 
   // -- Creates new Raft Server -- //
-  let mut server = RaftServerRest::new(config);
+  //  let mut server = RaftServerRest::new(config);
+
+  let server = RaftServerRpc::new(config);
 
   // -- Start Raft Server -- //
   server.start().await;

@@ -3,9 +3,9 @@ syntax = "proto3";
 package raft;
 
 service RaftCore {
-  rpc vote(VoteRequest) returns (VoteResponse);
-  rpc heartbeat(HeartbeatRequest) returns (EntryResponse);
-  rpc command(CommandRequest) returns (CommandResponse);
+  rpc Vote(VoteRequest) returns (VoteResponse);
+  rpc Heartbeat(HeartbeatRequest) returns (EntryResponse);
+  rpc Command(CommandRequest) returns (CommandResponse);
 }
 
 message VoteRequest {
@@ -47,7 +47,7 @@ message CommandResponse {
 }
 
 service Health {
-  rpc info(EmptyRequest) returns (InfoResponse);
+  rpc Info(EmptyRequest) returns (InfoResponse);
 }
 
 message EmptyRequest {
