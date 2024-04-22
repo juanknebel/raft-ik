@@ -4,12 +4,11 @@ use std::{
   time::{Duration, Instant},
 };
 
+use crate::client::node_client::NodeClient;
 use log::{error, info};
 use rand::Rng;
 
-use crate::node::{
-  entry::VoteResult, node_client::NodeClient, state::RaftPosition,
-};
+use crate::node::{entry::VoteResult, state::RaftPosition};
 
 use super::{
   entry::{Entry, EntryResult, Vote},
@@ -203,7 +202,7 @@ impl RaftNode {
 mod tests {
 
   use super::*;
-  use crate::node::node_client::HttpNodeClient;
+  use crate::client::node_client::HttpNodeClient;
   use std::{str::FromStr, thread};
 
   static ELECTION_TIMEOUT: u64 = 6;

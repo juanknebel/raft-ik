@@ -3,6 +3,7 @@ use std::{net::SocketAddr, time::Duration};
 use axum::async_trait;
 use reqwest::{IntoUrl, Url};
 use serde::{Deserialize, Serialize};
+use tonic::transport::Channel;
 
 use crate::{
   api::api_proto::raft::{
@@ -111,6 +112,17 @@ impl RpcNodeClient {
       timeout,
     }
   }
+
+  pub async fn create_client(
+    &self,
+    address: &SocketAddr,
+  ) -> Result<RaftCoreClient<Channel>, String> {
+    let url = format!("http://{}:{}", address.ip(), address.port());
+    let client = RaftCoreClient::connect(url)
+      .await
+      .map_err(|e| e.to_string());
+    client
+  }
 }
 
 #[async_trait]
@@ -120,10 +132,7 @@ impl NodeClient for RpcNodeClient {
     address: &SocketAddr,
     a_vote: &Vote,
   ) -> Result<VoteResult, String> {
-    let url = format!("http://{}:{}", address.ip(), address.port());
-    let mut client = RaftCoreClient::connect(url)
-      .await
-      .map_err(|e| e.to_string())?;
+    let mut client = self.create_client(address).await?;
     let vote_request = VoteRequest {
       term: a_vote.term(),
       candidate_id: a_vote.candidate() as u32,
@@ -145,10 +154,7 @@ impl NodeClient for RpcNodeClient {
     address: &SocketAddr,
     a_heartbeat: &Entry,
   ) -> Result<EntryResult, String> {
-    let url = format!("http://{}:{}", address.ip(), address.port());
-    let mut client = RaftCoreClient::connect(url)
-      .await
-      .map_err(|e| e.to_string())?;
+    let mut client = self.create_client(address).await?;
     let heartbeat_request = HeartbeatRequest {
       message: Some(RaftMessage {
         term: a_heartbeat.term(),

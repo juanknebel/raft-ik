@@ -15,10 +15,8 @@ use crate::{
     raft::{health_server::HealthServer, raft_core_server::RaftCoreServer},
     HealthService, RaftCoreService,
   },
-  node::{
-    node::RaftNode,
-    node_client::{HttpNodeClient, RpcNodeClient},
-  },
+  client::node_client::{HttpNodeClient, RpcNodeClient},
+  node::node::RaftNode,
 };
 
 /// This a simple Server configuration to create the Node with its parameters.

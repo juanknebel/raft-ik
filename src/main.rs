@@ -4,6 +4,7 @@ use env_logger;
 use crate::raft::server::{RaftServerConfig, RaftServerRpc};
 
 mod api;
+mod client;
 mod error;
 mod node;
 mod raft;

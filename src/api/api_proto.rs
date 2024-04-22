@@ -102,7 +102,13 @@ impl RaftCore for RaftCoreService {
         drop(node_lock);
         match e {
           None => Err(Status::internal("Unexpected error")),
-          Some(address) => Err(Status::permission_denied(address.to_string())),
+          Some(address) => {
+            let error_msg = format!(
+              "I am a follower. Please send message to the leader {}",
+              address.to_string()
+            );
+            Err(Status::permission_denied(error_msg))
+          },
         }
       },
     };
