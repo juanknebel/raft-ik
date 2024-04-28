@@ -10,10 +10,15 @@ use tonic::transport::Server;
 
 use crate::{
   api,
-  api::api_proto::{
-    raft,
-    raft::{health_server::HealthServer, raft_core_server::RaftCoreServer},
-    HealthService, RaftCoreService,
+  api::{
+    api_proto::{
+      raft_api,
+      raft_api::{
+        entry_point_server::EntryPointServer, health_server::HealthServer,
+      },
+      EntryPointService, HealthService,
+    },
+    core_api::{raft, raft::raft_core_server::RaftCoreServer, RaftCoreService},
   },
   client::node_client::{HttpNodeClient, RpcNodeClient},
   node::node::RaftNode,
@@ -112,8 +117,10 @@ impl RaftServerRpc {
     info!("[Listening on {addr}]");
     let core_service = RaftCoreService::new(Arc::clone(&self.node));
     let health_service = HealthService::new(Arc::clone(&self.node));
+    let entry_service = EntryPointService::new(Arc::clone(&self.node));
     let reflection_service = tonic_reflection::server::Builder::configure()
       .register_encoded_file_descriptor_set(raft::FILE_DESCRIPTOR_SET)
+      .register_encoded_file_descriptor_set(raft_api::FILE_DESCRIPTOR_SET)
       .build()
       .unwrap();
 
@@ -121,6 +128,7 @@ impl RaftServerRpc {
       .add_service(reflection_service)
       .add_service(RaftCoreServer::new(core_service))
       .add_service(HealthServer::new(health_service))
+      .add_service(EntryPointServer::new(entry_service))
       .serve(addr)
       .await
       .unwrap();

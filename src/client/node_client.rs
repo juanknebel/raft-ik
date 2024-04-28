@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use tonic::transport::Channel;
 
 use crate::{
-  api::api_proto::raft::{
+  api::core_api::raft::{
     raft_core_client::RaftCoreClient, HeartbeatRequest, RaftMessage,
     VoteRequest,
   },

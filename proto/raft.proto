@@ -35,31 +35,3 @@ message EntryResponse {
   uint64 term = 1;
   bool success = 2;
 }
-
-service EntryPoint {
-  rpc Command(CommandRequest) returns (CommandResponse);
-}
-
-message CommandRequest {
-  string command = 1;
-}
-
-message CommandResponse {
-  uint32 leader = 1;
-  uint64 term = 2;
-}
-
-service Health {
-  rpc Info(EmptyRequest) returns (InfoResponse);
-}
-
-message EmptyRequest {
-
-}
-
-message InfoResponse {
-  uint32 id = 1;
-  uint64 term = 2;
-  uint32 leader = 3;
-  uint32 vote_for = 4;
-}
