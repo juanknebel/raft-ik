@@ -5,7 +5,6 @@ use crate::raft::server::{RaftServerConfig, RaftServerRpc};
 
 mod api;
 mod client;
-mod error;
 mod node;
 mod raft;
 
@@ -18,8 +17,6 @@ async fn main() {
   let config = RaftServerConfig::new();
 
   // -- Creates new Raft Server -- //
-  //  let mut server = RaftServerRest::new(config);
-
   let server = RaftServerRpc::new(config);
 
   // -- Start Raft Server -- //

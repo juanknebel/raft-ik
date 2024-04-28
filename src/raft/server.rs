@@ -3,13 +3,11 @@ use std::{
   time::Duration,
 };
 
-use axum::Router;
 use log::info;
 use tokio::sync::Mutex;
 use tonic::transport::Server;
 
 use crate::{
-  api,
   api::{
     api_proto::{
       raft_api,
@@ -20,7 +18,7 @@ use crate::{
     },
     core_api::{raft, raft::raft_core_server::RaftCoreServer, RaftCoreService},
   },
-  client::node_client::{HttpNodeClient, RpcNodeClient},
+  client::node_client::RpcNodeClient,
   node::node::RaftNode,
 };
 
@@ -130,54 +128,6 @@ impl RaftServerRpc {
       .add_service(HealthServer::new(health_service))
       .add_service(EntryPointServer::new(entry_service))
       .serve(addr)
-      .await
-      .unwrap();
-  }
-}
-
-/// The Raft Server that contains the Node wrapped in a sync Mutex and the
-/// configuration needed to created it.
-pub struct RaftServerRest {
-  node: Arc<Mutex<RaftNode>>,
-  router: Router,
-  config: RaftServerConfig,
-}
-
-impl RaftServerRest {
-  pub fn new(config: RaftServerConfig) -> RaftServerRest {
-    // -- Node initialazing --//
-    let node_client = HttpNodeClient::new(config.node_timeout());
-    let node = RaftNode::new(
-      config.server_id(),
-      config.addresses(),
-      node_client,
-    );
-    let arc_node = Arc::new(Mutex::new(node));
-
-    // -- Routes --//
-    let router = Router::new().merge(api::api::routes(Arc::clone(&arc_node)));
-    RaftServerRest {
-      node: Arc::clone(&arc_node),
-      router,
-      config,
-    }
-  }
-
-  fn routes(&self) -> Router {
-    self.router.clone()
-  }
-
-  /// Starts the Raft Server by spawning the task that need to be executed in
-  /// the background.
-  pub async fn start(&mut self) {
-    info!("Starting the Raft Server");
-    tokio::spawn(background_tasks(Arc::clone(&self.node)));
-
-    // -- Start the the web server -- //
-    let addr = SocketAddr::from_str(&self.config.host()).unwrap();
-    info!("[Listening on {addr}]");
-    axum::Server::bind(&addr)
-      .serve(self.routes().into_make_service())
       .await
       .unwrap();
   }

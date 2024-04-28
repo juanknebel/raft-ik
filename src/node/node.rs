@@ -202,7 +202,7 @@ impl RaftNode {
 mod tests {
 
   use super::*;
-  use crate::client::node_client::HttpNodeClient;
+  use crate::client::node_client::RpcNodeClient;
   use std::{str::FromStr, thread};
 
   static ELECTION_TIMEOUT: u64 = 6;
@@ -226,7 +226,7 @@ mod tests {
       SocketAddr::from_str("127.0.0.1:7002").unwrap(),
     );
 
-    let node_client = HttpNodeClient::new(Duration::from_millis(10u64));
+    let node_client = RpcNodeClient::new(Duration::from_millis(10u64));
 
     RaftNode::new(1u16, server_address, node_client)
   }
