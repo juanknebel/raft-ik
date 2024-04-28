@@ -3,10 +3,11 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 use tonic::{Request, Response, Status};
 
+use crate::api::api_proto::raft::entry_point_server::EntryPointServer;
 use raft::{
-  health_server::Health, raft_core_server::RaftCore, CommandRequest,
-  CommandResponse, EmptyRequest, EntryResponse, HeartbeatRequest, InfoResponse,
-  VoteRequest, VoteResponse,
+  entry_point_server::EntryPoint, health_server::Health,
+  raft_core_server::RaftCore, CommandRequest, CommandResponse, EmptyRequest,
+  EntryResponse, HeartbeatRequest, InfoResponse, VoteRequest, VoteResponse,
 };
 
 use crate::node::{
@@ -79,7 +80,54 @@ impl RaftCore for RaftCoreService {
     };
     Ok(Response::new(ack_response))
   }
+}
 
+#[derive(Debug, Clone)]
+pub struct HealthService {
+  node: Arc<Mutex<RaftNode>>,
+}
+
+impl HealthService {
+  pub fn new(node: Arc<Mutex<RaftNode>>) -> HealthService {
+    HealthService {
+      node,
+    }
+  }
+}
+
+#[tonic::async_trait]
+impl Health for HealthService {
+  async fn info(
+    &self,
+    _: Request<EmptyRequest>,
+  ) -> Result<Response<InfoResponse>, Status> {
+    let node_lock = self.node.lock().await;
+    let response = InfoResponse {
+      id: node_lock.id_node() as u32,
+      term: node_lock.current_term(),
+      leader: node_lock.leader().unwrap_or_default() as u32,
+      vote_for: node_lock.vote_for().unwrap_or_default() as u32,
+    };
+    drop(node_lock);
+    Ok(Response::new(response))
+  }
+}
+
+#[derive(Debug, Clone)]
+pub struct EntryPointService {
+  node: Arc<Mutex<RaftNode>>,
+}
+
+impl EntryPointService {
+  pub fn new(node: Arc<Mutex<RaftNode>>) -> EntryPointService {
+    EntryPointService {
+      node,
+    }
+  }
+}
+
+#[tonic::async_trait]
+impl EntryPoint for EntryPointService {
   async fn command(
     &self,
     request: Request<CommandRequest>,
@@ -112,36 +160,5 @@ impl RaftCore for RaftCoreService {
         }
       },
     };
-  }
-}
-
-#[derive(Debug, Clone)]
-pub struct HealthService {
-  node: Arc<Mutex<RaftNode>>,
-}
-
-impl HealthService {
-  pub fn new(node: Arc<Mutex<RaftNode>>) -> HealthService {
-    HealthService {
-      node,
-    }
-  }
-}
-
-#[tonic::async_trait]
-impl Health for HealthService {
-  async fn info(
-    &self,
-    _: Request<EmptyRequest>,
-  ) -> Result<Response<InfoResponse>, Status> {
-    let node_lock = self.node.lock().await;
-    let response = InfoResponse {
-      id: node_lock.id_node() as u32,
-      term: node_lock.current_term(),
-      leader: node_lock.leader().unwrap_or_default() as u32,
-      vote_for: node_lock.vote_for().unwrap_or_default() as u32,
-    };
-    drop(node_lock);
-    Ok(Response::new(response))
   }
 }
