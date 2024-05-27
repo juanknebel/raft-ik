@@ -37,14 +37,21 @@ impl RaftServerConfig {
   pub fn new() -> RaftServerConfig {
     dotenv::dotenv().ok();
     // -- Configuration --//
-    let host = std::env::var("HOST").expect("Host undefined");
+    let host = std::env::var("HOST").expect("HOST is undefined");
     let id_node: u16 = std::env::var("ID_NODE")
-      .expect("NodeID undefined")
+      .expect("ID_NODE is undefined")
       .parse()
       .expect("Cannot parse the id node.");
 
-    let nodes_string = std::env::var("ID_NODES").expect("NodeIDs undefined");
+    let nodes_string = std::env::var("ID_NODES").expect("ID_NODES is undefined");
+    if nodes_string.is_empty() {
+      panic!("ID_NODES is empty")
+    }
     let node_ids: Vec<&str> = nodes_string.split(',').collect();
+    if node_ids.len() % 2 == 1 {
+      panic!("The cluster must have an odd number of nodes. ")
+    }
+
     let mut address_info = HashMap::new();
     for a_node_id in node_ids {
       let id_number: u16 = a_node_id
@@ -58,7 +65,7 @@ impl RaftServerConfig {
     let timeout_ms: u64 = std::env::var("NODE_CLIENT_TIMEOUT_MS")
       .unwrap_or("10".to_string())
       .parse()
-      .expect("The node client timeout isn't a number");
+      .expect("The NODE_CLIENT_TIMEOUT_MS isn't a number");
     RaftServerConfig {
       server_identification: id_node,
       peers_address: address_info,
