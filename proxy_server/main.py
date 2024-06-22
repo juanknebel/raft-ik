@@ -4,6 +4,7 @@ from bottle import route, run, request, HTTPResponse
 import proto_api.api_pb2_grpc as pb2_grpc
 import proto_api.api_pb2 as pb2
 import grpc
+import logging
 
 
 class ProxyConfig:
@@ -30,8 +31,8 @@ class ProxyConfig:
 class RaftIK:
     def __init__(self, config: ProxyConfig) -> None:
         self.nodes = config.nodes()
-        self.leader = -1
-        self.term = -1
+        self.leader = list(self.nodes.keys())[0]
+        self.term = 0
         self.update_leader()
 
     def send_request(self, command: str) -> HTTPResponse:
@@ -43,15 +44,18 @@ class RaftIK:
             except grpc.RpcError as e:
                 code = e.code()
                 details = e.details()
+                logger.error(e)
                 if code == grpc.StatusCode.PERMISSION_DENIED:
+                    logger.warning("Leader was changed")
                     self.update_leader()
+                    return HTTPResponse(
+                        status=502, body="Server is busy, please try again."
+                    )
 
-                print(code)
-                print(details)
-                return HTTPResponse(status=403, body=details)
+                return HTTPResponse(status=503, body="Server unvailable.")
 
             else:
-                print(response)
+                logger.info(response)
                 return HTTPResponse(status=201)
 
     def update_leader(self) -> None:
@@ -59,13 +63,16 @@ class RaftIK:
             with grpc.insecure_channel(k) as channel:
                 stub = pb2_grpc.HealthStub(channel)
                 request = pb2.EmptyRequest()
-                response: pb2.InfoResponse = stub.Info(request)
-                if response.term > self.term:
-                    print(v)
-                    self.leader = response.leader
-                    self.term = response.term
+                try:
+                    response: pb2.InfoResponse = stub.Info(request)
+                    if response.term > self.term:
+                        self.leader = response.leader
+                        self.term = response.term
+                except grpc.RpcError as e:
+                    logger.error(e)
 
 
+logger = logging.getLogger(__name__)
 proxy_config = ProxyConfig()
 raft_ik = RaftIK(proxy_config)
 
