@@ -48,3 +48,12 @@ mkdir -p tmp/cluster_2;
 mkdir -p tmp/cluster_3;
 zellij -l code-layout.kdl;
 ```
+
+To generate the python code from proto
+```shell
+cd proxy_server;
+mkdir -p proto_api;
+pip install requirements.txt;
+python -m grpc_tools.protoc -I../proto --python_out=proto_api/ --pyi_out=proto_api/ --grpc_python_out=proto_api/ ../proto/api.proto;
+python -m grpc_tools.protoc -I../proto --python_out=proto_api/ --pyi_out=proto_api/ --grpc_python_out=proto_api/ ../proto/raft.proto;
+```

@@ -16,11 +16,21 @@ layout {
           pane name="Cluster 3" cwd="./tmp/cluster_3"
         }
     }
+    tab name="Raft IK (Rust)" cwd="./" {
+        pane command="nvim" name="nvim" size="80%"
+        pane name="Run" size="20%"
+    }
+    tab name="Proxy Server (Python)" cwd="./proxy_server" {
+        pane command="nvim" name="nvim" size="80%"
+        pane split_direction="vertical" {
+          pane name="Run" 
+          pane name="Test"
+        }
+    }
     tab name="System Monitor" cwd="./" {
         pane command="htop" name="htop" size="80%"
         pane command="df" name="Disk usage" size="20%" {
             args "-h"
         }
-
     }
 }
