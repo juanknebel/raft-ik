@@ -5,11 +5,11 @@ import proto_api.api_pb2_grpc as pb2_grpc
 import proto_api.api_pb2 as pb2
 import grpc
 import logging
+import sys
 
 
 class ProxyConfig:
     def __init__(self) -> None:
-        load_dotenv()
         node_ids = os.getenv("NODES").split(",")  # pyright: ignore
         self.the_nodes = {}
         for a_node_id in node_ids:
@@ -59,7 +59,7 @@ class RaftIK:
                 return HTTPResponse(status=201)
 
     def update_leader(self) -> None:
-        for v, k in self.nodes.items():
+        for _, k in self.nodes.items():
             with grpc.insecure_channel(k) as channel:
                 stub = pb2_grpc.HealthStub(channel)
                 request = pb2.EmptyRequest()
@@ -72,6 +72,16 @@ class RaftIK:
                     logger.error(e)
 
 
+load_dotenv()
+log_level = logging.getLevelName(str(os.getenv("LOG")))
+logging.basicConfig(
+    level=log_level,
+    format="%(levelname)s:%(asctime)s:%(message)s",
+    handlers=[
+        logging.FileHandler("raftik-proxy.log"),
+        logging.StreamHandler(sys.stdout),
+    ],
+)
 logger = logging.getLogger(__name__)
 proxy_config = ProxyConfig()
 raft_ik = RaftIK(proxy_config)
@@ -85,6 +95,7 @@ def ping():
 @route("/api/execute", method="POST")
 def execute():
     body_json = request.json
+    logger.info(body_json)
     return raft_ik.send_request(body_json["command"])  # pyright: ignore
 
 
