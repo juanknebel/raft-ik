@@ -1,13 +1,11 @@
-use super::entry::{
-  RaftEntry, RaftEntryResponse, RaftRequestVote, RaftVoteResponse,
-};
+use super::entry::{Entry, EntryResult, Vote, VoteResult};
 
 #[derive(Debug)]
 pub struct RaftState {
   current_term: u64,
   current_position: RaftPosition,
   vote_for: Option<u16>,
-  log: Vec<RaftEntry>,
+  log: Vec<Entry>,
   commit_index: u64,
   last_applied: u64,
 }
@@ -24,6 +22,8 @@ impl RaftState {
     }
   }
 
+  /// In order to prepare to the election it needs to increment the actual term,
+  /// transition to a Candidate state and vote for itself.
   pub fn prepare_for_election(&mut self, node_id: u16) {
     self.current_term = self.current_term + 1;
     self.current_position = RaftPosition::Candidate;
@@ -38,23 +38,23 @@ impl RaftState {
     self.current_term
   }
 
-  fn logs(&self) -> &Vec<RaftEntry> {
+  fn logs(&self) -> &Vec<Entry> {
     self.log.as_ref()
   }
 
   /// Process an entry send by another node.
   /// At this point I assume is only a heartbeat.
-  pub fn process(&mut self, an_entry: &RaftEntry) -> RaftEntryResponse {
-    if an_entry.is_hearbaet() {
+  pub fn process(&mut self, an_entry: &Entry) -> EntryResult {
+    if an_entry.is_heartbeat() {
       if an_entry.term() < self.term() {
-        return RaftEntryResponse::failure(self.term());
+        return EntryResult::failure(self.term());
       }
       self.current_position = RaftPosition::Follower;
       self.vote_for = None;
       self.current_term = an_entry.term();
-      RaftEntryResponse::success(self.term())
+      EntryResult::success(self.term())
     } else {
-      RaftEntryResponse::failure(self.term())
+      EntryResult::failure(self.term())
     }
   }
 
@@ -63,18 +63,18 @@ impl RaftState {
   /// If the state doesn´t vote for anyone yet, then is positive vote.
   /// If the log of the candidate is up to date with the state, then the vote is
   /// positive. If the log of the candidate is old, then the vote is negative.
-  pub fn answer_vote(&mut self, a_vote: &RaftRequestVote) -> RaftVoteResponse {
+  pub fn answer_vote(&mut self, a_vote: &Vote) -> VoteResult {
     if self.term() > a_vote.term() {
-      return RaftVoteResponse::failure(self.term());
+      return VoteResult::failure(self.term());
     }
     return match self.vote_for {
-      Some(_) => RaftVoteResponse::failure(self.term()),
+      Some(_) => VoteResult::failure(self.term()),
       None => {
         if self.log_is_up_to_date(&a_vote) {
           self.vote_for = Some(a_vote.candidate());
-          RaftVoteResponse::success(self.term())
+          VoteResult::success(self.term())
         } else {
-          RaftVoteResponse::failure(self.term())
+          VoteResult::failure(self.term())
         }
       },
     };
@@ -87,7 +87,7 @@ impl RaftState {
   /// * the term in the last entry is lower than the request for vote
   /// * the log terms are equal but the length of the logs is lower than the
   ///   request for vote.
-  fn log_is_up_to_date(&self, a_vote: &RaftRequestVote) -> bool {
+  fn log_is_up_to_date(&self, a_vote: &Vote) -> bool {
     match self.log.last() {
       Some(last_entry) => {
         let size = self.log.len() as u64;
@@ -101,6 +101,9 @@ impl RaftState {
     }
   }
 
+  /// Resolve the election based on the votes.
+  /// If the positive votes are more than 50% then transition the state to
+  /// leader, otherwise revert to follower and updates for which node it voted.
   pub fn resolve_election(
     &mut self,
     positive_votes: i32,
@@ -156,7 +159,7 @@ mod test {
 
   #[test]
   fn log_up_to_date() {
-    let a_vote = RaftRequestVote::new(5u64, 2u16);
+    let a_vote = Vote::new(5u64, 2u16);
     let a_state = RaftState::new();
     let up_to_date = a_state.log_is_up_to_date(&a_vote);
     assert_eq!(up_to_date, true);
@@ -164,7 +167,7 @@ mod test {
 
   #[test]
   fn answer_vote_ok_not_voted() {
-    let a_vote = RaftRequestVote::new(1u64, 2u16);
+    let a_vote = Vote::new(1u64, 2u16);
     let mut a_state = RaftState::new();
     let response_vote = a_state.answer_vote(&a_vote);
 
@@ -174,7 +177,7 @@ mod test {
 
   #[test]
   fn answer_vote_not_ok_voted() {
-    let a_vote = RaftRequestVote::new(1u64, 2u16);
+    let a_vote = Vote::new(1u64, 2u16);
     let mut a_state = RaftState::new();
     a_state.prepare_for_election(3u16);
     let response_vote = a_state.answer_vote(&a_vote);
@@ -185,7 +188,7 @@ mod test {
 
   #[test]
   fn answer_vote_not_ok_term() {
-    let a_vote = RaftRequestVote::new(1u64, 2u16);
+    let a_vote = Vote::new(1u64, 2u16);
     let mut a_state = RaftState::new();
     a_state.prepare_for_election(1u16);
     a_state.prepare_for_election(1u16);
@@ -198,7 +201,7 @@ mod test {
   /// Until the log replication this test is useless
   #[test]
   fn answer_vote_not_ok_log_not_updated() {
-    let a_vote = RaftRequestVote::new(2u64, 2u16);
+    let a_vote = Vote::new(2u64, 2u16);
     let mut a_state = RaftState::new();
     let response_vote = a_state.answer_vote(&a_vote);
 
@@ -208,7 +211,7 @@ mod test {
 
   #[test]
   fn process_heartbeat_fail() {
-    let an_entry = RaftEntry::new_heartbeat(1u64, 1u16, 0, 0, 0);
+    let an_entry = Entry::new_heartbeat(1u64, 1u16, 0, 0, 0);
     let mut a_state = RaftState::new();
     a_state.current_term = 2u64;
     let response_heartbeat = a_state.process(&an_entry);
@@ -219,7 +222,7 @@ mod test {
 
   #[test]
   fn process_heartbeat_success() {
-    let an_entry = RaftEntry::new_heartbeat(1u64, 1u16, 0, 0, 0);
+    let an_entry = Entry::new_heartbeat(1u64, 1u16, 0, 0, 0);
     let mut a_state = RaftState::new();
     let response_heartbeat = a_state.process(&an_entry);
 

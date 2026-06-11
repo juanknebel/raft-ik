@@ -3,13 +3,23 @@ use std::{
   time::Duration,
 };
 
-use axum::Router;
 use log::info;
 use tokio::sync::Mutex;
+use tonic::transport::Server;
 
 use crate::{
-  api,
-  node::{node::RaftNode, node_client::HttpNodeClient},
+  api::{
+    api_proto::{
+      raft_api,
+      raft_api::{
+        entry_point_server::EntryPointServer, health_server::HealthServer,
+      },
+      EntryPointService, HealthService,
+    },
+    core_api::{raft, raft::raft_core_server::RaftCoreServer, RaftCoreService},
+  },
+  client::node_client::RpcNodeClient,
+  node::node::RaftNode,
 };
 
 /// This a simple Server configuration to create the Node with its parameters.
@@ -27,14 +37,21 @@ impl RaftServerConfig {
   pub fn new() -> RaftServerConfig {
     dotenv::dotenv().ok();
     // -- Configuration --//
-    let host = std::env::var("HOST").expect("Host undefined");
+    let host = std::env::var("HOST").expect("HOST is undefined");
     let id_node: u16 = std::env::var("ID_NODE")
-      .expect("NodeID undefined")
+      .expect("ID_NODE is undefined")
       .parse()
       .expect("Cannot parse the id node.");
 
-    let nodes_string = std::env::var("ID_NODES").expect("NodeIDs undefined");
+    let nodes_string = std::env::var("ID_NODES").expect("ID_NODES is undefined");
+    if nodes_string.is_empty() {
+      panic!("ID_NODES is empty")
+    }
     let node_ids: Vec<&str> = nodes_string.split(',').collect();
+    if node_ids.len() % 2 == 1 {
+      panic!("The cluster must have an odd number of nodes. ")
+    }
+
     let mut address_info = HashMap::new();
     for a_node_id in node_ids {
       let id_number: u16 = a_node_id
@@ -48,7 +65,7 @@ impl RaftServerConfig {
     let timeout_ms: u64 = std::env::var("NODE_CLIENT_TIMEOUT_MS")
       .unwrap_or("10".to_string())
       .parse()
-      .expect("The node client timeout isn't a number");
+      .expect("The NODE_CLIENT_TIMEOUT_MS isn't a number");
     RaftServerConfig {
       server_identification: id_node,
       peers_address: address_info,
@@ -57,7 +74,7 @@ impl RaftServerConfig {
     }
   }
 
-  pub fn host(&self) -> String {
+  fn host(&self) -> String {
     self.host_address.to_string()
   }
 
@@ -74,17 +91,15 @@ impl RaftServerConfig {
   }
 }
 
-/// The Raft Server that contains the Node wrapped in a sync Mutex and the
-/// configuration needed to created it.
-pub struct RaftServer {
+pub struct RaftServerRpc {
   node: Arc<Mutex<RaftNode>>,
-  router: Router,
+  config: RaftServerConfig,
 }
 
-impl RaftServer {
-  pub fn new(config: &RaftServerConfig) -> RaftServer {
+impl RaftServerRpc {
+  pub fn new(config: RaftServerConfig) -> RaftServerRpc {
     // -- Node initialazing --//
-    let node_client = HttpNodeClient::new(config.node_timeout());
+    let node_client = RpcNodeClient::new(config.node_timeout());
     let node = RaftNode::new(
       config.server_id(),
       config.addresses(),
@@ -92,23 +107,36 @@ impl RaftServer {
     );
     let arc_node = Arc::new(Mutex::new(node));
 
-    // -- Routes --//
-    let router = Router::new().merge(api::api::routes(Arc::clone(&arc_node)));
-    RaftServer {
+    RaftServerRpc {
       node: Arc::clone(&arc_node),
-      router,
+      config,
     }
   }
 
-  pub fn routes(&self) -> Router {
-    self.router.clone()
-  }
-
-  /// Starts the Raft Server by spawning the task that need to be executed in
-  /// the background.
-  pub async fn start(&mut self) {
+  pub async fn start(&self) {
     info!("Starting the Raft Server");
     tokio::spawn(background_tasks(Arc::clone(&self.node)));
+
+    // -- Start the the web server -- //
+    let addr = SocketAddr::from_str(&self.config.host()).unwrap();
+    info!("[Listening on {addr}]");
+    let core_service = RaftCoreService::new(Arc::clone(&self.node));
+    let health_service = HealthService::new(Arc::clone(&self.node));
+    let entry_service = EntryPointService::new(Arc::clone(&self.node));
+    let reflection_service = tonic_reflection::server::Builder::configure()
+      .register_encoded_file_descriptor_set(raft::FILE_DESCRIPTOR_SET)
+      .register_encoded_file_descriptor_set(raft_api::FILE_DESCRIPTOR_SET)
+      .build()
+      .unwrap();
+
+    Server::builder()
+      .add_service(reflection_service)
+      .add_service(RaftCoreServer::new(core_service))
+      .add_service(HealthServer::new(health_service))
+      .add_service(EntryPointServer::new(entry_service))
+      .serve(addr)
+      .await
+      .unwrap();
   }
 }
 
